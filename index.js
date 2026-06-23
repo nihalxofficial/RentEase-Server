@@ -25,6 +25,7 @@ async function run() {
     const db = await client.db("rentease_db");
     const propertyCollection = db.collection("properties");
 
+    // Property Related apis
     app.get("/api/properties", async(req,res)=> {
         const properties = await propertyCollection.find().toArray();
         res.send(properties);
@@ -47,9 +48,10 @@ async function run() {
         const result = await propertyCollection.updateOne({_id: new ObjectId(id)}, {$set: property})
         res.send(result);
     })
-    app.delete("/api/properties", async(req,res)=> {
-        const properties = await propertyCollection.find().toArray();
-        res.send(properties);
+    app.delete("/api/properties/:id", async(req,res)=> {
+        const {id} = req.params;
+        const result = await propertyCollection.deleteOne({_id: new ObjectId(id)})
+        res.send(result);
     })
   } finally {
     ;
