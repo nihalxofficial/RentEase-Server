@@ -23,10 +23,10 @@ const client = new MongoClient(uri, {
 
 
 const verifyToken = async (req, res, next) => {
-  const { Authorization } = req.headers;
-  const token = Authorization?.split(" ")[1];
+  const { authorization } = req.headers;
+  const token = authorization?.split(" ")[1];
   if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ message: "Unauthenticated" });
   }
   try {
     const JWKS = createRemoteJWKSet(
@@ -37,11 +37,29 @@ const verifyToken = async (req, res, next) => {
     console.log(payload);
     next();
   } catch (error) {
-    console.error("Token validation failed:", error);
-    return res.status(401).json({ message: "Unauthorized" });
+      console.error("Token validation failed:", error);
+    return res.status(401).json({ message: "Unauthenticated" });
   }
 };
 
+const verifyOwner = async(req, res, next)=>{
+  if(req.user.role !== "owner"){
+    return res.status(403).json({message: "Unauthorized"})
+  }
+  next()
+}
+const verifyAdmin = async(req, res, next)=>{
+  if(req.user.role !== "admin"){
+    return res.status(403).json({message: "Unauthorized"})
+  }
+  next()
+}
+const verifyTenant = async(req, res, next)=>{
+  if(req.user.role !== "tenant"){
+    return res.status(403).json({message: "Unauthorized"})
+  }
+  next()
+}
 
 async function run() {
   try {
@@ -76,7 +94,6 @@ async function run() {
 
       const total = await propertyCollection.countDocuments(query);
 
-      // ✅ always paginate, default to page 1
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 6;
       const skipItems = (page - 1) * perPage;
@@ -99,7 +116,7 @@ async function run() {
       res.send(property);
     });
 
-    app.post("/api/properties", async (req, res) => {
+    app.post("/api/properties", verifyToken, verifyOwner, async (req, res) => {
       const property = req.body;
       const result = await propertyCollection.insertOne({
         ...property,
