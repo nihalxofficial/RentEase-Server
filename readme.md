@@ -6,3 +6,4 @@
 - Cors
 - Nodemon
 - Jwt
+- Jose-cjs

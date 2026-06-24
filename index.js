@@ -2,6 +2,7 @@ const express = require("express");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 dotenv.config();
 
 const app = express();
@@ -19,6 +20,29 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+
+const verifyToken = async (req, res, next) => {
+  const { Authorization } = req.headers;
+  const token = Authorization?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  try {
+    const JWKS = createRemoteJWKSet(
+      new URL(process.env.CLIENT_URL + "/api/auth/jwks"),
+    );
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload;
+    console.log(payload);
+    next();
+  } catch (error) {
+    console.error("Token validation failed:", error);
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+};
+
+
 async function run() {
   try {
     const db = await client.db("rentease_db");
@@ -43,7 +67,6 @@ async function run() {
         query.status = req.query.status;
       }
 
-      // Sort
       const sortOption =
         req.query.sortBy === "low-to-high"
           ? { price: 1 }
@@ -51,12 +74,21 @@ async function run() {
             ? { price: -1 }
             : {};
 
+      const total = await propertyCollection.countDocuments(query);
+
+      // ✅ always paginate, default to page 1
+      const page = parseInt(req.query.page) || 1;
+      const perPage = parseInt(req.query.perPage) || 6;
+      const skipItems = (page - 1) * perPage;
+
       const properties = await propertyCollection
         .find(query)
         .sort(sortOption)
+        .skip(skipItems)
+        .limit(perPage)
         .toArray();
 
-      res.send(properties);
+      res.send({ properties, total });
     });
 
     app.get("/api/properties/:id", async (req, res) => {
