@@ -66,6 +66,7 @@ async function run() {
     const propertyCollection = db.collection("properties");
     const reviewCollection = db.collection("reviews");
     const userCollection = db.collection("user");
+    const wishlistCollection = db.collection("wishlist")
 
     // Property Related apis
     // app.get("/api/properties", async (req, res) => {
@@ -294,22 +295,60 @@ async function run() {
       res.send(result);
     });
 
-    // app.patch("/api/reviews/:id", verifyToken, async (req, res) => {
-    //   const { id } = req.params;
-    //   const review = req.body;
-    //   const result = await reviewCollection.updateOne(
-    //     { _id: new ObjectId(id) },
-    //     { $set: review },
-    //   );
-    //   res.send(result);
-    // });
-    // app.delete("/api/reviews/:id", async (req, res) => {
-    //   const { id } = req.params;
-    //   const result = await reviewCollection.deleteOne({
-    //     _id: new ObjectId(id),
-    //   });
-    //   res.send(result);
-    // });
+    app.patch("/api/reviews/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const review = req.body;
+      const result = await reviewCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: review },
+      );
+      res.send(result);
+    });
+    app.delete("/api/reviews/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await reviewCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+
+    // WishList related apis ===================
+    app.get("/api/wishlist", async (req, res) => {
+      const query = {}
+      if(req.query.tenantId){
+        query.tenantId = req.query.tenantId
+      }
+      const wishlist = await wishlistCollection.find(query).toArray();
+      res.send(wishlist);
+    });
+
+    app.post("/api/wishlist", verifyToken, verifyTenant, async (req, res) => {
+      const wish = req.body;
+      const result = await wishlistCollection.insertOne({
+        ...wish,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      res.send(result);
+    });
+
+    app.patch("/api/wishlist/:id", verifyToken, verifyTenant, async (req, res) => {
+      const { id } = req.params;
+      const wish = req.body;
+      const result = await reviewCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: wish },
+      );
+      res.send(result);
+    });
+
+    app.delete("/api/wishlist/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await wishlistCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
 
     // User related apis ========================
     app.get("/api/users", async (req, res) => {
