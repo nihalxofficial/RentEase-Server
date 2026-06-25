@@ -68,6 +68,48 @@ async function run() {
     const userCollection = db.collection("user");
 
     // Property Related apis
+    // app.get("/api/properties", async (req, res) => {
+    //   const query = {};
+
+    //   if (req.query.search) {
+    //     query.$or = [
+    //       { title: { $regex: req.query.search, $options: "i" } },
+    //       { location: { $regex: req.query.search, $options: "i" } },
+    //       { extraFeatures: { $regex: req.query.search, $options: "i" } },
+    //     ];
+    //   }
+
+    //   if (req.query.propertyType) {
+    //     query.propertyType = req.query.propertyType;
+    //   }
+    //   if (req.query.status) {
+    //     query.status = req.query.status;
+    //   }
+
+    //   const sortOption =
+    //     req.query.sortBy === "low-to-high"
+    //       ? { price: 1 }
+    //       : req.query.sortBy === "high-to-low"
+    //         ? { price: -1 }
+    //         : {};
+
+    //   const total = await propertyCollection.countDocuments(query);
+
+    //   const page = parseInt(req.query.page) || 1;
+    //   const perPage = parseInt(req.query.perPage) || 6;
+    //   const skipItems = (page - 1) * perPage;
+
+    //   const properties = await propertyCollection
+    //     .find(query)
+    //     .sort(sortOption)
+    //     .skip(skipItems)
+    //     .limit(perPage)
+    //     .toArray();
+
+    //   res.send({ properties, total });
+    // });
+
+    // Properties retrieve with aggregate
     app.get("/api/properties", async (req, res) => {
       const query = {};
 
@@ -91,7 +133,7 @@ async function run() {
           ? { price: 1 }
           : req.query.sortBy === "high-to-low"
             ? { price: -1 }
-            : {};
+            : { createdAt: -1 };
 
       const total = await propertyCollection.countDocuments(query);
 
@@ -100,10 +142,51 @@ async function run() {
       const skipItems = (page - 1) * perPage;
 
       const properties = await propertyCollection
-        .find(query)
-        .sort(sortOption)
-        .skip(skipItems)
-        .limit(perPage)
+        .aggregate([
+          { $match: query },
+          { $sort: sortOption },
+          { $skip: skipItems },
+          { $limit: perPage },
+
+          // Step 1: Convert ObjectId to string (since propertyId in reviews is string)
+          {
+            $addFields: {
+              propertyIdString: { $toString: "$_id" },
+            },
+          },
+
+          // Step 2: Lookup using the string version
+          {
+            $lookup: {
+              from: "reviews",
+              localField: "propertyIdString", // This is now a string
+              foreignField: "propertyId", // This is also a string
+              as: "reviews",
+            },
+          },
+
+          // Calculate rating and review count
+          {
+            $addFields: {
+              reviewCount: { $size: "$reviews" },
+              rating: {
+                $cond: [
+                  { $gt: [{ $size: "$reviews" }, 0] },
+                  { $round: [{ $avg: "$reviews.rating" }, 1] },
+                  0,
+                ],
+              },
+            },
+          },
+
+          // Remove temporary fields and reviews array
+          {
+            $project: {
+              propertyIdString: 0,
+              reviews: 0,
+            },
+          },
+        ])
         .toArray();
 
       res.send({ properties, total });
@@ -147,8 +230,17 @@ async function run() {
     // Reviews related apis ====================
 
     app.get("/api/reviews", async (req, res) => {
+      const query = {};
+
+      if (req.query.propertyId) {
+        query.propertyId = req.query.propertyId;
+      }
+
       const reviews = await reviewCollection
         .aggregate([
+          {
+            $match: query,
+          },
           {
             $addFields: {
               tenantObjectId: {
