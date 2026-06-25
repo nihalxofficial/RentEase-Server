@@ -21,7 +21,6 @@ const client = new MongoClient(uri, {
   },
 });
 
-
 const verifyToken = async (req, res, next) => {
   const { authorization } = req.headers;
   const token = authorization?.split(" ")[1];
@@ -34,37 +33,38 @@ const verifyToken = async (req, res, next) => {
     );
     const { payload } = await jwtVerify(token, JWKS);
     req.user = payload;
-    console.log(payload);
+    // console.log(payload);
     next();
   } catch (error) {
-      console.error("Token validation failed:", error);
+    console.error("Token validation failed:", error);
     return res.status(401).json({ message: "Unauthenticated" });
   }
 };
 
-const verifyOwner = async(req, res, next)=>{
-  if(req.user.role !== "owner"){
-    return res.status(403).json({message: "Unauthorized"})
+const verifyOwner = async (req, res, next) => {
+  if (req.user.role !== "owner") {
+    return res.status(403).json({ message: "Unauthorized" });
   }
-  next()
-}
-const verifyAdmin = async(req, res, next)=>{
-  if(req.user.role !== "admin"){
-    return res.status(403).json({message: "Unauthorized"})
+  next();
+};
+const verifyAdmin = async (req, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ message: "Unauthorized" });
   }
-  next()
-}
-const verifyTenant = async(req, res, next)=>{
-  if(req.user.role !== "tenant"){
-    return res.status(403).json({message: "Unauthorized"})
+  next();
+};
+const verifyTenant = async (req, res, next) => {
+  if (req.user.role !== "tenant") {
+    return res.status(403).json({ message: "Unauthorized" });
   }
-  next()
-}
+  next();
+};
 
 async function run() {
   try {
     const db = await client.db("rentease_db");
     const propertyCollection = db.collection("properties");
+    const reviewCollection = db.collection("reviews");
 
     // Property Related apis
     app.get("/api/properties", async (req, res) => {
@@ -125,7 +125,8 @@ async function run() {
       });
       res.send(result);
     });
-    app.patch("/api/properties/:id", async (req, res) => {
+
+    app.patch("/api/properties/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
       const property = req.body;
       const result = await propertyCollection.updateOne(
@@ -141,6 +142,48 @@ async function run() {
       });
       res.send(result);
     });
+
+    // Reviews related apis
+
+    app.get("/api/reviews", async (req, res) => {
+      const reviews = await reviewCollection.find().toArray();
+      res.send(reviews);
+    });
+
+    // app.get("/api/reviews/:id", async (req, res) => {
+    //   const { id } = req.params;
+    //   const review = await reviewCollection.findOne({
+    //     _id: new ObjectId(id),
+    //   });
+    //   res.send(review);
+    // });
+
+    app.post("/api/reviews", verifyToken, verifyTenant, async (req, res) => {
+      const review = req.body;
+      const result = await reviewCollection.insertOne({
+        ...review,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      res.send(result);
+    });
+
+    // app.patch("/api/reviews/:id", verifyToken, async (req, res) => {
+    //   const { id } = req.params;
+    //   const review = req.body;
+    //   const result = await reviewCollection.updateOne(
+    //     { _id: new ObjectId(id) },
+    //     { $set: review },
+    //   );
+    //   res.send(result);
+    // });
+    // app.delete("/api/reviews/:id", async (req, res) => {
+    //   const { id } = req.params;
+    //   const result = await reviewCollection.deleteOne({
+    //     _id: new ObjectId(id),
+    //   });
+    //   res.send(result);
+    // });
   } finally {
   }
 }
