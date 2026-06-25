@@ -66,7 +66,7 @@ async function run() {
     const propertyCollection = db.collection("properties");
     const reviewCollection = db.collection("reviews");
     const userCollection = db.collection("user");
-    const wishlistCollection = db.collection("wishlist")
+    const wishlistCollection = db.collection("wishlist");
 
     // Property Related apis
     // app.get("/api/properties", async (req, res) => {
@@ -314,12 +314,26 @@ async function run() {
 
     // WishList related apis ===================
     app.get("/api/wishlist", async (req, res) => {
-      const query = {}
-      if(req.query.tenantId){
-        query.tenantId = req.query.tenantId
+      const query = {};
+      if (req.query.tenantId) {
+        query.tenantId = req.query.tenantId;
       }
       const wishlist = await wishlistCollection.find(query).toArray();
       res.send(wishlist);
+    });
+
+    app.get("/api/wishlist/check", async (req, res) => {
+      const { propertyId, tenantId } = req.query;
+
+      const wishlist = await wishlistCollection.findOne({
+        propertyId,
+        tenantId,
+      });
+
+      res.send({
+        success: true,
+        isWishlisted: !!wishlist,
+      });
     });
 
     app.post("/api/wishlist", verifyToken, verifyTenant, async (req, res) => {
@@ -332,21 +346,14 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/api/wishlist/:id", verifyToken, verifyTenant, async (req, res) => {
-      const { id } = req.params;
-      const wish = req.body;
-      const result = await reviewCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: wish },
-      );
-      res.send(result);
-    });
+    app.delete("/api/wishlist", async (req, res) => {
+      const { propertyId, tenantId } = req.query;
 
-    app.delete("/api/wishlist/:id", async (req, res) => {
-      const { id } = req.params;
       const result = await wishlistCollection.deleteOne({
-        _id: new ObjectId(id),
+        propertyId,
+        tenantId,
       });
+
       res.send(result);
     });
 
