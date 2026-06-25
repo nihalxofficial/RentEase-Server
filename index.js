@@ -113,6 +113,11 @@ async function run() {
     app.get("/api/properties", async (req, res) => {
       const query = {};
 
+      if (req.query.isFeatured) {
+        const isFeatured = req.query.isFeatured === "true";
+        query.isFeatured = isFeatured;
+      }
+
       if (req.query.search) {
         query.$or = [
           { title: { $regex: req.query.search, $options: "i" } },
@@ -204,6 +209,7 @@ async function run() {
       const property = req.body;
       const result = await propertyCollection.insertOne({
         ...property,
+        isFeatured: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
