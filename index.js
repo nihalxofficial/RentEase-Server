@@ -65,6 +65,7 @@ async function run() {
     const db = await client.db("rentease_db");
     const propertyCollection = db.collection("properties");
     const reviewCollection = db.collection("reviews");
+    const userCollection = db.collection("user");
 
     // Property Related apis
     app.get("/api/properties", async (req, res) => {
@@ -143,10 +144,37 @@ async function run() {
       res.send(result);
     });
 
-    // Reviews related apis
+    // Reviews related apis ====================
 
     app.get("/api/reviews", async (req, res) => {
-      const reviews = await reviewCollection.find().toArray();
+      const reviews = await reviewCollection
+        .aggregate([
+          {
+            $addFields: {
+              tenantObjectId: {
+                $toObjectId: "$tenantId",
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "user",
+              localField: "tenantObjectId",
+              foreignField: "_id",
+              as: "tenant",
+            },
+          },
+          {
+            $unwind: "$tenant",
+          },
+          {
+            $project: {
+              tenantObjectId: 0,
+            },
+          },
+        ])
+        .toArray();
+
       res.send(reviews);
     });
 
@@ -184,6 +212,12 @@ async function run() {
     //   });
     //   res.send(result);
     // });
+
+    // User related apis ========================
+    app.get("/api/users", async (req, res) => {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+    });
   } finally {
   }
 }
