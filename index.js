@@ -67,6 +67,7 @@ async function run() {
     const reviewCollection = db.collection("reviews");
     const userCollection = db.collection("user");
     const wishlistCollection = db.collection("wishlist");
+    const subscriptionCollection = db.collection("subscriptions");
 
     // Property Related apis
     // app.get("/api/properties", async (req, res) => {
@@ -132,6 +133,18 @@ async function run() {
       }
       if (req.query.status) {
         query.status = req.query.status;
+      }
+
+      if (req.query.location) {
+        query.location = { $regex: req.query.location, $options: "i" };
+      }
+
+      if (req.query.minPrice || req.query.maxPrice) {
+        query.price = {};
+        if (req.query.minPrice)
+          query.price.$gte = parseFloat(req.query.minPrice);
+        if (req.query.maxPrice)
+          query.price.$lte = parseFloat(req.query.maxPrice);
       }
 
       const sortOption =
@@ -361,6 +374,26 @@ async function run() {
     app.get("/api/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
+    });
+
+    app.get("/api/users/:id", async (req, res) => {
+      const { id } = await req.params;
+      const user = await userCollection.findOne({ _id: new ObjectId(id) });
+      res.send(user);
+    });
+
+    // Subscription related apis
+    app.get("/subscriptions", async (req, res) => {
+      const query = {};
+      if (req.query.tenantId) {
+        query.tenantId = req.query.tenantId;
+      }
+      const subscriptions = await subscriptionCollection.find(query).toArray();
+      res.send(subscriptions);
+    });
+    app.get("/subscriptions", async (req, res) => {
+      const subscriptions = await subscriptionCollection.find().toArray();
+      res.send(subscriptions);
     });
   } finally {
   }
