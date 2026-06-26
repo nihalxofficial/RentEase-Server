@@ -67,7 +67,8 @@ async function run() {
     const reviewCollection = db.collection("reviews");
     const userCollection = db.collection("user");
     const wishlistCollection = db.collection("wishlist");
-    const subscriptionCollection = db.collection("subscriptions");
+    const transactionCollection = db.collection("transactions");
+    const bookingCollection = db.collection("bookings");
 
     // Property Related apis
     // app.get("/api/properties", async (req, res) => {
@@ -382,18 +383,53 @@ async function run() {
       res.send(user);
     });
 
-    // Subscription related apis
-    app.get("/subscriptions", async (req, res) => {
+    // Transaction related apis
+    app.get("/api/transactions", async (req, res) => {
       const query = {};
       if (req.query.tenantId) {
         query.tenantId = req.query.tenantId;
       }
-      const subscriptions = await subscriptionCollection.find(query).toArray();
-      res.send(subscriptions);
+      const transactions = await transactionCollection.find(query).toArray();
+      res.send(transactions);
     });
-    app.get("/subscriptions", async (req, res) => {
-      const subscriptions = await subscriptionCollection.find().toArray();
-      res.send(subscriptions);
+
+    // Booking related apis
+    app.get("/api/bookings", async (req, res) => {
+      const query = {};
+      if (req.query.tenantId) {
+        query.tenantId = req.query.tenantId;
+      }
+      const bookings = await bookingCollection.find(query).toArray();
+      res.send(bookings);
+    });
+
+    app.post("/api/bookings", async (req, res) => {
+      const data = req.body;
+      const { session_id } = data;
+
+      const isBooked = await bookingCollection.findOne({ session_id });
+      if (isBooked) {
+        return res.send({ message: "Booking already exist" });
+      }
+
+      const result = await bookingCollection.insertOne({
+        status: "pending",
+        ...data,
+        price: Number(data.price),
+      });
+
+      await transactionCollection.insertOne({
+        bookingId: result.insertedId.toString(),
+        propertyId: data.propertyId,
+        userId: data.userId,
+        amount: Number(data.price),
+        currency: "usd",
+        session_id: data.session_id,
+        status: "completed",
+        createdAt: new Date(),
+      });
+
+      res.send(result);
     });
   } finally {
   }
