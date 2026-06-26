@@ -386,8 +386,11 @@ async function run() {
     // Transaction related apis
     app.get("/api/transactions", async (req, res) => {
       const query = {};
-      if (req.query.tenantId) {
-        query.tenantId = req.query.tenantId;
+      if (req.query.userId) {
+        query.userId = req.query.userId;
+      }
+      if(req.query.bookingId){
+        query.bookingId = req.query.bookingId
       }
       const transactions = await transactionCollection.find(query).toArray();
       res.send(transactions);
@@ -396,8 +399,8 @@ async function run() {
     // Booking related apis
     app.get("/api/bookings", async (req, res) => {
       const query = {};
-      if (req.query.tenantId) {
-        query.tenantId = req.query.tenantId;
+      if (req.query.userId) {
+        query.userId = req.query.userId;
       }
       const bookings = await bookingCollection.find(query).toArray();
       res.send(bookings);
@@ -416,6 +419,7 @@ async function run() {
         status: "pending",
         ...data,
         price: Number(data.price),
+        createdAt: new Date()
       });
 
       await transactionCollection.insertOne({
@@ -429,7 +433,7 @@ async function run() {
         createdAt: new Date(),
       });
 
-      res.send(result);
+      res.send({message:"Payment successful✅"});
     });
   } finally {
   }
