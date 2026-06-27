@@ -8,7 +8,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
 
 const port = process.env.PORT;
 const uri = process.env.MONGO_URI;
@@ -116,8 +116,8 @@ async function run() {
     app.get("/api/properties", async (req, res) => {
       const query = {};
 
-      if(req.query.ownerId){
-        query.ownerId = req.query.ownerId
+      if (req.query.ownerId) {
+        query.ownerId = req.query.ownerId;
       }
 
       if (req.query.isFeatured) {
@@ -396,8 +396,8 @@ async function run() {
       if (req.query.ownerId) {
         query.ownerId = req.query.ownerId;
       }
-      if(req.query.bookingId){
-        query.bookingId = req.query.bookingId
+      if (req.query.bookingId) {
+        query.bookingId = req.query.bookingId;
       }
       const transactions = await transactionCollection.find(query).toArray();
       res.send(transactions);
@@ -429,7 +429,7 @@ async function run() {
         status: "pending",
         ...data,
         price: Number(data.price),
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       await transactionCollection.insertOne({
@@ -444,8 +444,48 @@ async function run() {
         createdAt: new Date(),
       });
 
-      res.send({message:"Payment successful✅"});
+      res.send({ message: "Payment successful✅" });
     });
+
+    app.patch("/api/bookings/:id", async (req, res) => {
+      const { id } = req.params;
+      const data = req.body;
+
+      // Convert to ObjectId
+      const bookingId = new ObjectId(id);
+
+      // If approving, reject other pending bookings for same property
+      if (data.status === "approved") {
+        // Get the booking to find its propertyId
+        const booking = await bookingCollection.findOne({ _id: bookingId });
+
+        if (booking) {
+          // Reject all other pending bookings for this property
+          await bookingCollection.updateMany(
+            {
+              propertyId: booking.propertyId,
+              status: "pending",
+              _id: { $ne: bookingId },
+            },
+            {
+              $set: {
+                status: "rejected",
+                rejectionReason: "Another booking was approved",
+              },
+            },
+          );
+        }
+      }
+
+      // Update the current booking
+      const result = await bookingCollection.updateOne(
+        { _id: bookingId },
+        { $set: data },
+      );
+      res.send(result);
+    });
+
+    
   } finally {
   }
 }
