@@ -8,7 +8,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const port = process.env.PORT;
 const uri = process.env.MONGO_URI;
@@ -115,6 +115,10 @@ async function run() {
     // Properties retrieve with aggregate
     app.get("/api/properties", async (req, res) => {
       const query = {};
+
+      if(req.query.ownerId){
+        query.ownerId = req.query.ownerId
+      }
 
       if (req.query.isFeatured) {
         const isFeatured = req.query.isFeatured === "true";
@@ -371,7 +375,7 @@ async function run() {
       res.send(result);
     });
 
-    // User related apis ========================
+    // User related apis ============================
     app.get("/api/users", async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
@@ -383,11 +387,14 @@ async function run() {
       res.send(user);
     });
 
-    // Transaction related apis
+    // Transaction related apis =========================
     app.get("/api/transactions", async (req, res) => {
       const query = {};
       if (req.query.userId) {
         query.userId = req.query.userId;
+      }
+      if (req.query.ownerId) {
+        query.ownerId = req.query.ownerId;
       }
       if(req.query.bookingId){
         query.bookingId = req.query.bookingId
@@ -396,11 +403,14 @@ async function run() {
       res.send(transactions);
     });
 
-    // Booking related apis
+    // Booking related apis ==========================
     app.get("/api/bookings", async (req, res) => {
       const query = {};
       if (req.query.userId) {
         query.userId = req.query.userId;
+      }
+      if (req.query.ownerId) {
+        query.ownerId = req.query.ownerId;
       }
       const bookings = await bookingCollection.find(query).toArray();
       res.send(bookings);
@@ -426,6 +436,7 @@ async function run() {
         bookingId: result.insertedId.toString(),
         propertyId: data.propertyId,
         userId: data.userId,
+        ownerId: data.ownerId,
         amount: Number(data.price),
         currency: "usd",
         session_id: data.session_id,
