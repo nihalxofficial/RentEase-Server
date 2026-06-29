@@ -382,10 +382,19 @@ async function run() {
     });
 
     app.get("/api/users/:id", async (req, res) => {
-      const { id } = await req.params;
+      const { id } =  req.params;
       const user = await userCollection.findOne({ _id: new ObjectId(id) });
       res.send(user);
     });
+
+    app.patch("/api/users/:id", async (req, res) => {
+      const { id } = req.params;
+      const data =  req.body;
+      const result = await userCollection.updateOne({ _id: new ObjectId(id)}, {$set: data});
+      res.send(result);
+    });
+
+
 
     // Transaction related apis =========================
     app.get("/api/transactions", async (req, res) => {
