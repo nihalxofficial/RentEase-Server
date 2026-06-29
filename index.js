@@ -244,6 +244,7 @@ async function run() {
       );
       res.send(result);
     });
+
     app.delete("/api/properties/:id", async (req, res) => {
       const { id } = req.params;
       const result = await propertyCollection.deleteOne({
