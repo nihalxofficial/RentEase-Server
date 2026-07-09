@@ -1,4 +1,4 @@
-# RentEase — Property Rental & Booking Platform (Server)
+# RentEase — Property Rental & Booking Platform
 
 This repository contains the **backend (server-side)** codebase for RentEase — a full-stack property rental and booking platform. The server provides a secure REST API consumed by the Next.js frontend, handling authentication, property management, bookings, payments and admin operations.
 
