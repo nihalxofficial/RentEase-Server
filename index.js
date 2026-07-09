@@ -705,6 +705,10 @@ app.get("/", (req, res) => {
   res.send({ message: "Server is Active✅" });
 });
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
-});
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`Example app listening on port ${port}`);
+  });
+}
+
+module.exports = app;
