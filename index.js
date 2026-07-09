@@ -3,6 +3,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
+const { Redis } = require("@upstash/redis");
 dotenv.config();
 
 const app = express();
@@ -20,6 +21,66 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+// ==================== UPSTASH REDIS ====================
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+// Default TTLs (seconds)
+const TTL = {
+  PROPERTIES_LIST: 60,
+  PROPERTY_SINGLE: 300,
+  REVIEWS: 120,
+  WISHLIST: 60,
+  USERS: 120,
+  TRANSACTIONS: 60,
+  BOOKINGS: 60,
+};
+
+// List-style caches are "versioned" — bumping the version key instantly
+// invalidates every previously cached list key without a wildcard scan/delete
+// (which the Upstash REST API doesn't support cheaply).
+const getVersion = async (name) => {
+  const v = await redis.get(`ver:${name}`);
+  return v || 1;
+};
+
+const bumpVersion = async (name) => {
+  try {
+    await redis.incr(`ver:${name}`);
+  } catch (err) {
+    console.error(`Redis bumpVersion(${name}) failed:`, err.message);
+  }
+};
+
+const cacheGet = async (key) => {
+  try {
+    const cached = await redis.get(key);
+    return cached ?? null;
+  } catch (err) {
+    console.error(`Redis GET (${key}) failed:`, err.message);
+    return null;
+  }
+};
+
+const cacheSet = async (key, value, ttlSeconds) => {
+  try {
+    await redis.set(key, value, { ex: ttlSeconds });
+  } catch (err) {
+    console.error(`Redis SET (${key}) failed:`, err.message);
+  }
+};
+
+const cacheDel = async (...keys) => {
+  try {
+    if (keys.length) await redis.del(...keys);
+  } catch (err) {
+    console.error(`Redis DEL (${keys.join(",")}) failed:`, err.message);
+  }
+};
 
 const verifyToken = async (req, res, next) => {
   const { authorization } = req.headers;
@@ -114,6 +175,14 @@ async function run() {
 
     // Properties retrieve with aggregate
     app.get("/api/properties", async (req, res) => {
+      const version = await getVersion("properties");
+      const cacheKey = `properties:v${version}:${JSON.stringify(req.query)}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const query = {};
 
       if (req.query.ownerId) {
@@ -213,14 +282,30 @@ async function run() {
         ])
         .toArray();
 
-      res.send({ properties, total });
+      const responseBody = { properties, total };
+
+      await cacheSet(cacheKey, responseBody, TTL.PROPERTIES_LIST);
+
+      res.send(responseBody);
     });
 
     app.get("/api/properties/:id", async (req, res) => {
       const { id } = req.params;
+      const cacheKey = `property:${id}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const property = await propertyCollection.findOne({
         _id: new ObjectId(id),
       });
+
+      if (property) {
+        await cacheSet(cacheKey, property, TTL.PROPERTY_SINGLE);
+      }
+
       res.send(property);
     });
 
@@ -232,6 +317,9 @@ async function run() {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      await bumpVersion("properties");
+
       res.send(result);
     });
 
@@ -242,6 +330,10 @@ async function run() {
         { _id: new ObjectId(id) },
         { $set: property },
       );
+
+      await bumpVersion("properties");
+      await cacheDel(`property:${id}`);
+
       res.send(result);
     });
 
@@ -250,12 +342,24 @@ async function run() {
       const result = await propertyCollection.deleteOne({
         _id: new ObjectId(id),
       });
+
+      await bumpVersion("properties");
+      await cacheDel(`property:${id}`);
+
       res.send(result);
     });
 
     // Reviews related apis ====================
 
     app.get("/api/reviews", async (req, res) => {
+      const version = await getVersion("reviews");
+      const cacheKey = `reviews:v${version}:${JSON.stringify(req.query)}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const query = {};
 
       if (req.query.propertyId) {
@@ -293,6 +397,8 @@ async function run() {
         ])
         .toArray();
 
+      await cacheSet(cacheKey, reviews, TTL.REVIEWS);
+
       res.send(reviews);
     });
 
@@ -311,6 +417,11 @@ async function run() {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      await bumpVersion("reviews");
+      await bumpVersion("properties"); // rating/reviewCount shown on property lists
+      if (review.propertyId) await cacheDel(`property:${review.propertyId}`);
+
       res.send(result);
     });
 
@@ -321,6 +432,10 @@ async function run() {
         { _id: new ObjectId(id) },
         { $set: review },
       );
+
+      await bumpVersion("reviews");
+      await bumpVersion("properties");
+
       res.send(result);
     });
     app.delete("/api/reviews/:id", async (req, res) => {
@@ -328,31 +443,56 @@ async function run() {
       const result = await reviewCollection.deleteOne({
         _id: new ObjectId(id),
       });
+
+      await bumpVersion("reviews");
+      await bumpVersion("properties");
+
       res.send(result);
     });
 
     // WishList related apis ===================
     app.get("/api/wishlist", async (req, res) => {
+      const version = await getVersion("wishlist");
+      const cacheKey = `wishlist:v${version}:${JSON.stringify(req.query)}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const query = {};
       if (req.query.tenantId) {
         query.tenantId = req.query.tenantId;
       }
       const wishlist = await wishlistCollection.find(query).toArray();
+
+      await cacheSet(cacheKey, wishlist, TTL.WISHLIST);
+
       res.send(wishlist);
     });
 
     app.get("/api/wishlist/check", async (req, res) => {
       const { propertyId, tenantId } = req.query;
+      const cacheKey = `wishlist:check:${propertyId}:${tenantId}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
 
       const wishlist = await wishlistCollection.findOne({
         propertyId,
         tenantId,
       });
 
-      res.send({
+      const responseBody = {
         success: true,
         isWishlisted: !!wishlist,
-      });
+      };
+
+      await cacheSet(cacheKey, responseBody, TTL.WISHLIST);
+
+      res.send(responseBody);
     });
 
     app.post("/api/wishlist", verifyToken, verifyTenant, async (req, res) => {
@@ -362,6 +502,10 @@ async function run() {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      await bumpVersion("wishlist");
+      await cacheDel(`wishlist:check:${wish.propertyId}:${wish.tenantId}`);
+
       res.send(result);
     });
 
@@ -373,18 +517,43 @@ async function run() {
         tenantId,
       });
 
+      await bumpVersion("wishlist");
+      await cacheDel(`wishlist:check:${propertyId}:${tenantId}`);
+
       res.send(result);
     });
 
     // User related apis ============================
     app.get("/api/users", async (req, res) => {
+      const cacheKey = "users:all";
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const users = await userCollection.find().toArray();
+
+      await cacheSet(cacheKey, users, TTL.USERS);
+
       res.send(users);
     });
 
     app.get("/api/users/:id", async (req, res) => {
       const { id } =  req.params;
+      const cacheKey = `user:${id}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const user = await userCollection.findOne({ _id: new ObjectId(id) });
+
+      if (user) {
+        await cacheSet(cacheKey, user, TTL.USERS);
+      }
+
       res.send(user);
     });
 
@@ -392,6 +561,9 @@ async function run() {
       const { id } = req.params;
       const data =  req.body;
       const result = await userCollection.updateOne({ _id: new ObjectId(id)}, {$set: data});
+
+      await cacheDel(`user:${id}`, "users:all");
+
       res.send(result);
     });
 
@@ -399,6 +571,14 @@ async function run() {
 
     // Transaction related apis =========================
     app.get("/api/transactions", async (req, res) => {
+      const version = await getVersion("transactions");
+      const cacheKey = `transactions:v${version}:${JSON.stringify(req.query)}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const query = {};
       if (req.query.userId) {
         query.userId = req.query.userId;
@@ -410,11 +590,22 @@ async function run() {
         query.bookingId = req.query.bookingId;
       }
       const transactions = await transactionCollection.find(query).toArray();
+
+      await cacheSet(cacheKey, transactions, TTL.TRANSACTIONS);
+
       res.send(transactions);
     });
 
     // Booking related apis ==========================
     app.get("/api/bookings", async (req, res) => {
+      const version = await getVersion("bookings");
+      const cacheKey = `bookings:v${version}:${JSON.stringify(req.query)}`;
+
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return res.send(cached);
+      }
+
       const query = {};
       if (req.query.userId) {
         query.userId = req.query.userId;
@@ -423,6 +614,9 @@ async function run() {
         query.ownerId = req.query.ownerId;
       }
       const bookings = await bookingCollection.find(query).toArray();
+
+      await cacheSet(cacheKey, bookings, TTL.BOOKINGS);
+
       res.send(bookings);
     });
 
@@ -453,6 +647,9 @@ async function run() {
         status: "completed",
         createdAt: new Date(),
       });
+
+      await bumpVersion("bookings");
+      await bumpVersion("transactions");
 
       res.send({ message: "Payment successful✅" });
     });
@@ -492,6 +689,9 @@ async function run() {
         { _id: bookingId },
         { $set: data },
       );
+
+      await bumpVersion("bookings");
+
       res.send(result);
     });
 
