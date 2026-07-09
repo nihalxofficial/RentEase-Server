@@ -6,6 +6,10 @@ This repository contains the **backend (server-side)** codebase for RentEase —
 
 📁 **Client Repository:** [https://github.com/nihalxofficial/RentEase-Client](https://github.com/nihalxofficial/RentEase-Client)
 
+🐳 **Docker Images:**
+- Server: [hub.docker.com/r/nihalxofficial/rentease-server](https://hub.docker.com/r/nihalxofficial/rentease-server)
+- Client: [hub.docker.com/r/nihalxofficial/rentease-client](https://hub.docker.com/r/nihalxofficial/rentease-client)
+
 ---
 
 ## Key Features
@@ -29,6 +33,11 @@ This repository contains the **backend (server-side)** codebase for RentEase —
 - Filter properties by Property Type
 - Sort properties by Price (Low→High / High→Low)
 - All logic handled server-side — no client-side filtering
+
+### Caching (Redis)
+- Redis (Upstash) used to cache frequently requested read-heavy endpoints (e.g. approved property listings)
+- Reduces repeated MongoDB load for search/filter/sort queries
+- Cache invalidated on property create/update/approve/reject/delete
 
 ### Booking System
 - Booking creation tied to Stripe payment success
@@ -65,12 +74,14 @@ This repository contains the **backend (server-side)** codebase for RentEase —
 | `express` | Web server and REST API routing framework |
 | `mongodb` | Official MongoDB driver for database operations |
 | `mongodb atlas` | Cloud-hosted MongoDB database service |
+| `@upstash/redis` | Redis client for caching frequently accessed data |
 | `dotenv` | Loads environment variables from `.env` into `process.env` |
 | `cors` | Enables cross-origin requests from the frontend |
 | `nodemon` | Auto-restarts the server on file changes during development |
 | `jsonwebtoken` | Signs and verifies JWT tokens for authentication |
 | `jose-cjs` | JWT verification and signing with modern JOSE standards |
 | `stripe` | Server-side Stripe SDK for payment intent and transaction handling |
+| `docker` | Containerized deployment for consistent environments |
 
 ---
 
@@ -84,13 +95,15 @@ MONGODB_URI=your_mongodb_atlas_connection_string
 JWT_SECRET=your_jwt_secret_key
 STRIPE_SECRET_KEY=your_stripe_secret_key
 CLIENT_URL=https://rentease-flash.vercel.app
+UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 ```
 
 > Never commit `.env` to version control.
 
 ---
 
-## Getting Started
+## Getting Started (Without Docker)
 
 ```bash
 # Clone the repository
@@ -108,9 +121,85 @@ The server runs on [http://localhost:5000](http://localhost:5000) by default.
 
 ---
 
+## Running with Docker
+
+### Option A — Pull the pre-built image from Docker Hub
+
+No need to clone the repo or install Node — just pull and run the published image directly.
+
+```bash
+# Pull the image
+docker pull nihalxofficial/rentease-server:v1
+
+# Run it, passing in your environment variables
+docker run -d \
+  -p 5000:5000 \
+  --env-file .env \
+  --name rentease-server \
+  nihalxofficial/rentease-server:v1
+```
+
+Make sure you have a local `.env` file (same folder you run this command from) containing the variables listed above before running this.
+
+The server will be available at [http://localhost:5000](http://localhost:5000).
+
+**Useful commands:**
+```bash
+docker ps                       # confirm it's running
+docker logs -f rentease-server  # view logs
+docker stop rentease-server     # stop the container
+docker rm rentease-server       # remove the container
+```
+
+### Option B — Build the image yourself from source
+
+```bash
+git clone https://github.com/nihalxofficial/RentEase-Server.git
+cd RentEase-Server
+
+docker build -t rentease-server .
+docker run -d -p 5000:5000 --env-file .env --name rentease-server rentease-server
+```
+
+### Option C — Run client + server together with Docker Compose
+
+If you're also running the [client](https://github.com/nihalxofficial/RentEase-Client), pull both pre-built images and run them together with a single `docker-compose.yml`:
+
+```yaml
+version: "3.9"
+
+services:
+  client:
+    image: nihalxofficial/rentease-client:v1
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./client.env.local
+    depends_on:
+      - server
+
+  server:
+    image: nihalxofficial/rentease-server:v1
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./server.env
+```
+
+Then run:
+```bash
+docker compose up -d
+```
+
+This pulls both images from Docker Hub automatically (no local build needed) and starts them on the same network, so the client can reach the server internally at `http://server:5000`.
+
+---
+
 ## Deployment Notes
 
-- Server deployed without CORS, 404, or 504 errors in production
+- Server deployed without CORS, 404 or 504 errors in production
 - All private routes reload correctly without session loss
 - MongoDB Atlas used for cloud database hosting
+- Upstash Redis used for caching, reducing repeated database reads
 - Stripe webhooks configured for reliable payment confirmation
+- Docker image published to Docker Hub for consistent, reproducible deployments across environments
